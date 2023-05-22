@@ -17,9 +17,9 @@ class Actor(nn.Module):
        self.actor2 = nn.Linear(hidden_size, action_space)
 
     def forward(self, x):
-       actor = F.relu(self.actor1(x))
-       actor = F.relu(self.actor2(actor))
-       actor = F.softmax(actor)
+       actor = F.relu(self.actor1(torch.nan_to_num(x, nan=0.0)))
+       actor = F.relu(self.actor2(torch.nan_to_num(actor, nan=0.0)))
+       actor = F.softmax(torch.nan_to_num(actor, nan = 0.0), dim = 0)
        return actor
        
 class Critic(nn.Module):
@@ -34,16 +34,15 @@ class Critic(nn.Module):
        return critic 
        
 class TagLearner(): 
-    def __init__(self, learning_rate_actor = 1e-3, learning_rate_critic = 1e-3, epsilon = 0.1, gamma = 0.99, episodes = 1000): 
+    def __init__(self, learning_rate_actor = 1e-3, learning_rate_critic = 1e-3, gamma = 0.99, episodes = 1000): 
         self.actors = {}
         self.critics = {}
         self.optimizers_actors = {}
         self.optimizers_critics = {}
         self.buffer = {}
-        self.epsilon = epsilon
         self.gamma =0.99
         self.episodes = episodes
-        self.env = simple_tag_v3.env(render_mode='rgb_array')
+        self.env = simple_tag_v3.env(render_mode='rgb_array', num_obstacles=0)
         self.env.reset()
         self.buffer = {key: [] for key in self.env.agents}
         for agent in self.env.agents:
@@ -54,13 +53,10 @@ class TagLearner():
             self.optimizers_actors[agent] = optim.Adam(self.actors[agent].parameters(), lr=learning_rate_actor)
             self.optimizers_critics[agent] = optim.Adam(self.critics[agent].parameters(), lr=learning_rate_critic)
 
-    def epsaction(self, agent, actor, observation, epsilon):
-        if np.random.uniform() < epsilon: 
-            action = self.env.action_space(agent).sample()
-        else: 
-            obs_tensor = torch.from_numpy(observation).float()
-            actions = actor(obs_tensor)
-            action = torch.multinomial(actions, num_samples = 1).item()
+    def action(self, agent, actor, observation):
+        obs_tensor = torch.from_numpy(observation).float()
+        actions = actor(obs_tensor)
+        action = torch.multinomial(actions, num_samples = 1).item()
         return action
     
     def updateModel(self, agent,discount_factor, buffer):
@@ -109,7 +105,7 @@ class TagLearner():
                 if termination or truncation:
                     action = None
                 else: 
-                    action = self.epsaction(agent, actor, observation, self.epsilon)
+                    action = self.action(agent, actor, observation)
 
                 self.env.step(action)
                 rewards[agent] = rewards[agent] + reward
@@ -124,7 +120,11 @@ class TagLearner():
         return average_total_reward(self.env, max_episodes=self.episodes, max_steps=self.episodes*25)
 
 if __name__ == '__main__':
-    tag = TagLearner()
+    num_episodes = 10000
+    tag = TagLearner(episodes = num_episodes)
     rewards = tag.train()
-    print(rewards)
+    out_reward = 0
+    for key in rewards.keys(): 
+        out_reward += np.sum(rewards[key]) 
+    print(out_reward/num_episodes)
     random_policy = tag.atr()

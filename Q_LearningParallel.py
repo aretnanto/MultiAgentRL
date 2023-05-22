@@ -1,5 +1,6 @@
 from pettingzoo.mpe import simple_tag_v3
 from pettingzoo.utils import average_total_reward
+from pettingzoo.utils.conversions import aec_to_parallel
 import numpy as np
 import gym
 import numpy as np
@@ -35,6 +36,7 @@ class TagLearner():
         self.episodes = episodes
         self.batchsize = batchsize
         self.env = simple_tag_v3.env(render_mode='rgb_array')
+        self.env = aec_to_parallel(self.env)
         self.env.reset()
         self.buffer = {key: [] for key in self.env.agents}
         for agent in self.env.agents:
@@ -76,8 +78,17 @@ class TagLearner():
     def train(self):
         rewards_array = {key: [] for key in self.env.agents}
         for episode in tqdm(range(self.episodes)):
-            state = self.env.reset()
+            observations, _ = self.env.reset()
             rewards = {key: 0 for key in self.env.agents}
+            for cur_step in range(0, 25):
+                actions = {}
+                for agent in self.env.agents:
+                    action = self.epsaction(agent, self.models[agent], observations[agent], self.epsilon)
+                    actions[agent] = action
+                next_observations, rewards, terminations, truncations, infos = self.env.step(actions)
+                print(next_observations)
+
+                '''
             for agent in self.env.agent_iter():
                 observation, reward, termination, truncation, info = self.env.last()
                 QNet = self.models[agent]
@@ -102,18 +113,14 @@ class TagLearner():
                     self.buffer[agent].append((observation, action, reward, termination, truncation))
             for agent in rewards_array.keys():
                 rewards_array[agent].append(rewards[agent])
+            '''
         return rewards_array
 
     def atr(self): 
         return average_total_reward(self.env, max_episodes=self.episodes, max_steps=self.episodes*25)
 
 if __name__ == '__main__':
-    num_episodes = 1000
-    tag = TagLearner(episodes = num_episodes)
+    tag = TagLearner()
     rewards = tag.train()
-    out_reward = 0
-    for key in rewards.keys(): 
-        out_reward += np.sum(rewards[key]) 
-    print(out_reward/num_episodes)
+    print(rewards)
     random_policy = tag.atr()
-
