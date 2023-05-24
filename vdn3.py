@@ -67,14 +67,14 @@ class VDNLearner():
             self.target_q_networks[agent_type].load_state_dict(self.q_networks[agent_type].state_dict())
 
 
-
     def train(self):
-        episode_rewards = []
+        total_rewards = {agent: [] for agent in self.env.agents}
+
         for episode in range(self.episodes):
             obs, _ = self.env.reset()
             done = {agent: False for agent in self.env.agents}
             step_count = 0
-            episode_reward = 0
+            episode_rewards = {agent: 0 for agent in self.env.agents}
 
             while not all(done.values()):
                 actions = self._get_actions(obs)
@@ -83,6 +83,9 @@ class VDNLearner():
 
                 self._store_transition(obs, actions, rewards, next_obs, done)
 
+                for agent_id, reward in rewards.items():
+                    episode_rewards[agent_id] += reward
+
                 if step_count % self.update_target_freq == 0:
                     self._update_target_networks()
 
@@ -90,11 +93,23 @@ class VDNLearner():
 
                 obs = next_obs
                 step_count += 1
-                episode_reward += sum(rewards.values())
-                episode_rewards.append(episode_reward)
 
-        avg_reward = sum(episode_rewards) / self.episodes
-        print(f"Average total reward over {self.episodes} episodes: {avg_reward}")
+            for agent_id, reward in episode_rewards.items():
+                total_rewards[agent_id].append(reward)
+
+        # Calculate and print average total rewards for adversaries and non-adversaries
+        avg_adversary_rewards = []
+        avg_non_adversary_rewards = []
+
+        for agent_id, rewards in total_rewards.items():
+            avg_reward = sum(rewards) / len(rewards)
+            if agent_id in self.agent_types['adversary']:
+                avg_adversary_rewards.append(avg_reward)
+            else:
+                avg_non_adversary_rewards.append(avg_reward)
+
+        print("Average total reward for adversaries:", sum(avg_adversary_rewards) / len(avg_adversary_rewards))
+        print("Average total reward for non-adversaries:", sum(avg_non_adversary_rewards) / len(avg_non_adversary_rewards))
 
 
     def _get_actions(self, obs):
