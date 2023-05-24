@@ -69,10 +69,12 @@ class VDNLearner():
 
 
     def train(self):
+        episode_rewards = []
         for episode in range(self.episodes):
             obs, _ = self.env.reset()
             done = {agent: False for agent in self.env.agents}
             step_count = 0
+            episode_reward = 0
 
             while not all(done.values()):
                 actions = self._get_actions(obs)
@@ -88,6 +90,12 @@ class VDNLearner():
 
                 obs = next_obs
                 step_count += 1
+                episode_reward += sum(rewards.values())
+                episode_rewards.append(episode_reward)
+
+        avg_reward = sum(episode_rewards) / self.episodes
+        print(f"Average total reward over {self.episodes} episodes: {avg_reward}")
+
 
     def _get_actions(self, obs):
         actions = {}
