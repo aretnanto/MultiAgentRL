@@ -130,7 +130,7 @@ class VDNLearner():
     def _calculate_target_joint_q_values(self, rew_batch_list, act_batch_list, done_batch_list, joint_q_values):
         max_joint_next_q_values = joint_q_values.max(dim=1)
         target_joint_q_values = joint_q_values.clone().detach()
-        print(target_joint_q_values)
+        print(target_joint_q_values.shape)
 
         for i, (rew_batch, done_batch) in enumerate(zip(rew_batch_list, done_batch_list)):
             target_joint_q_values[np.arange(len(target_joint_q_values)), act_batch_list[i].squeeze()] = rew_batch + self.gamma * (1 - done_batch) * max_joint_next_q_values
