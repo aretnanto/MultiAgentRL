@@ -8,6 +8,23 @@ import random
 from pettingzoo.mpe import simple_tag_v3
 from pettingzoo.utils import average_total_reward
 
+
+
+class MixingNetwork(nn.Module):
+    def __init__(self, state_space, action_space, hidden_size=24):
+        super(MixingNetwork, self).__init__()
+        self.fc1 = nn.Linear(state_space, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.action_weights = nn.Linear(hidden_size, action_space)
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        action_weights = self.action_weights(x)
+        return action_weights
+
+####################################
+
 class AgentQNetwork(nn.Module):
     def __init__(self, state_space, action_space, hidden_size=24):
         super(AgentQNetwork, self).__init__()
@@ -50,6 +67,7 @@ class VDNLearner():
         self.q_networks = {}
         self.target_q_networks = {}
         self.optimizers = {}
+        self.mixers = {}
         self.buffer = {key: [] for key in self.env.agents}
 
         for agent_type, agents in self.agent_types.items():
@@ -60,6 +78,7 @@ class VDNLearner():
             target_q_network.load_state_dict(q_network.state_dict())
             self.q_networks[agent_type] = q_network
             self.target_q_networks[agent_type] = target_q_network
+            self.mixers[agent_type] = MixingNetwork(obs_dim, action_dim)
             self.optimizers[agent_type] = optim.Adam(q_network.parameters(), lr=learning_rate)
 
     def _update_target_networks(self):
@@ -127,6 +146,16 @@ class VDNLearner():
     def _store_transition(self, obs, actions, rewards, next_obs, done):
         for agent_id in self.env.agents:
             self.buffer[agent_id].append((obs[agent_id], actions[agent_id], rewards[agent_id], next_obs[agent_id], done[agent_id]))
+    
+    
+    
+    def _get_q_values(self, obs):
+        q_values = {}
+        for agent_type, agents in self.agent_types.items():
+            for agent_id in agents:
+                q_values[agent_id] = self.q_networks[agent_type](torch.tensor(obs[agent_id]).float())
+        return q_values
+    
 
     def _update_q_networks(self):
         for agent_type, agents in self.agent_types.items():
@@ -135,27 +164,15 @@ class VDNLearner():
             if obs_batch_list:
                 joint_q_values, joint_target_q_values = self._calculate_joint_q_values(agents, agent_type, obs_batch_list, act_batch_list, next_obs_batch_list)
 
-                target_joint_q_values = self._calculate_target_joint_q_values(rew_batch_list, act_batch_list, done_batch_list, joint_q_values, joint_target_q_values)
+                target_joint_q_values = torch.tensor(rew_batch_list) + (1 - torch.tensor(done_batch_list)) * self.gamma * torch.max(joint_target_q_values, dim=-1)[0]
 
-                loss = self.criterion(joint_q_values, target_joint_q_values.detach())
-
-                self.optimizers[agent_type].zero_grad()
-                loss.backward()
-                self.optimizers[agent_type].step()
-    def _update_q_networks(self):
-        for agent_type, agents in self.agent_types.items():
-            obs_batch_list, act_batch_list, rew_batch_list, next_obs_batch_list, done_batch_list = self._get_batch_data(agents)
-
-            if obs_batch_list:
-                joint_q_values, joint_target_q_values = self._calculate_joint_q_values(agents, agent_type, obs_batch_list, act_batch_list, next_obs_batch_list)
-
-                target_joint_q_values = self._calculate_target_joint_q_values(rew_batch_list, act_batch_list, done_batch_list, joint_q_values, joint_target_q_values)
-
-                loss = self.criterion(joint_q_values, target_joint_q_values.detach())
-
-                self.optimizers[agent_type].zero_grad()
-                loss.backward()
-                self.optimizers[agent_type].step()
+                for i, agent_id in enumerate(agents):
+                    q_values_i = joint_q_values[:, i]
+                    target_q_values_i = target_joint_q_values[:, i]
+                    loss = self.criterion(q_values_i, target_q_values_i.detach())
+                    self.optimizers[agent_type].zero_grad()
+                    loss.backward()
+                    self.optimizers[agent_type].step()
 
 
     def _get_batch_data(self, agents):
@@ -172,16 +189,32 @@ class VDNLearner():
         return obs_batch_list, act_batch_list, rew_batch_list, next_obs_batch_list, done_batch_list
 
     def _calculate_joint_q_values(self, agents, agent_type, obs_batch_list, act_batch_list, next_obs_batch_list):
-        joint_q_values = torch.zeros(self.batchsize, self.env.action_space(agents[0]).n)
-        joint_next_q_values = torch.zeros(self.batchsize, self.env.action_space(agents[0]).n)
+        print(obs_batch_list[-1])
+        q_values = self._get_q_values(obs_batch_list[-1])
+        next_q_values = self._get_q_values(next_obs_batch_list[-1])
+        next_actions = {}
+        for agent_id in agents:
+            if np.random.rand() < self.epsilon:
+                next_actions[agent_id] = self.env.action_space(agent_id).sample()
+            else:
+                print(next_q_values[agent_id])
+                next_actions[agent_id] = torch.argmax(next_q_values[agent_id]).item()
 
+        joint_q_values = []
+        joint_target_q_values = []
         for i, agent_id in enumerate(agents):
-            q_values = self.q_networks[agent_type](obs_batch_list[i])
-            next_q_values = self.target_q_networks[agent_type](next_obs_batch_list[i])
-            joint_q_values[np.arange(len(joint_q_values)), act_batch_list[i].squeeze()] += q_values[np.arange(len(q_values)), act_batch_list[i].squeeze()]
-            joint_next_q_values += next_q_values
+            q_values_i = q_values[agent_id]
+            next_q_values_i = next_q_values[agent_id]
+            next_action_i = next_actions[agent_id]
+            mixer_input = torch.cat([q_values_i, next_q_values_i], dim=-1)
+            action_weights_i = self.mixers[agent_type](mixer_input)
+            q_values_i = torch.sum(action_weights_i * F.one_hot(torch.tensor(act_batch_list[i]), self.env.action_space(agent_id).n).float(), dim=-1)
+            joint_q_values.append(q_values_i)
+            target_q_values_i = self.target_q_networks[agent_type](torch.tensor(next_obs_batch_list[-1][agent_id]).float())
+            target_q_values_i = torch.sum(target_q_values_i * F.one_hot(torch.tensor(next_action_i), self.env.action_space(agent_id).n).float(), dim=-1)
+            joint_target_q_values.append(target_q_values_i)
 
-        return joint_q_values, joint_next_q_values
+        return torch.stack(joint_q_values, dim=-1), torch.stack(joint_target_q_values, dim=-1)
 
     def _calculate_target_joint_q_values(self, rew_batch_list, act_batch_list, done_batch_list, joint_q_values, joint_next_q_values):
         max_joint_next_q_values, _ = joint_next_q_values.max(dim=1)

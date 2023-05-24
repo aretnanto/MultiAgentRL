@@ -42,15 +42,26 @@ class VDNLearner():
         self.env = simple_tag_v3.parallel_env()
         self.env.reset()
 
-        self.adversaries = ['adversary_0', 'adversary_1', 'adversary_2']
-        self.non_adversaries = ['agent_0']
+        # self.adversaries = ['adversary_0', 'adversary_1', 'adversary_2']
+        # self.non_adversaries = ['agent_0']
 
-        self.agent_types = {'adversary': self.adversaries, 'non_adversary': self.non_adversaries}
+        # self.agent_types = {'adversary': self.adversaries, 'non_adversary': self.non_adversaries}
 
         self.q_networks = {}
         self.target_q_networks = {}
         self.optimizers = {}
         self.buffer = {key: [] for key in self.env.agents}
+
+        for agents in self.env.agents:
+            obs_dim = self.env.observation_space(agents[0]).shape[0]
+            action_dim = self.env.action_space(agents[0]).n
+            q_network = AgentQNetwork(obs_dim, action_dim)
+            target_q_network = AgentQNetwork(obs_dim, action_dim)
+            target_q_network.load_state_dict(q_network.state_dict())
+            self.q_networks[agent_type] = q_network
+            self.target_q_networks[agent_type] = target_q_network
+            self.optimizers[agent_type] = optim.Adam(q_network.parameters(), lr=learning_rate)
+            obs_dim = self
 
         for agent_type, agents in self.agent_types.items():
             obs_dim = self.env.observation_space(agents[0]).shape[0]
@@ -98,18 +109,18 @@ class VDNLearner():
                 total_rewards[agent_id].append(reward)
 
         # Calculate and print average total rewards for adversaries and non-adversaries
-        avg_adversary_rewards = []
-        avg_non_adversary_rewards = []
-
+        # avg_adversary_rewards = []
+        # avg_non_adversary_rewards = []
+        avg_rewards = []
         for agent_id, rewards in total_rewards.items():
             avg_reward = sum(rewards) / len(rewards)
-            if agent_id in self.agent_types['adversary']:
-                avg_adversary_rewards.append(avg_reward)
-            else:
-                avg_non_adversary_rewards.append(avg_reward)
+            # if agent_id in self.agent_types['adversary']:
+            avg_rewards.append(avg_reward)
+            #else:
+            #    avg_non_adversary_rewards.append(avg_reward)
 
-        print("Average total reward for adversaries:", sum(avg_adversary_rewards) / len(avg_adversary_rewards))
-        print("Average total reward for non-adversaries:", sum(avg_non_adversary_rewards) / len(avg_non_adversary_rewards))
+        print("Average total reward", sum(avg_rewards) / len(avg_rewards))
+        # print("Average total reward for non-adversaries:", sum(avg_non_adversary_rewards) / len(avg_non_adversary_rewards))
 
 
     def _get_actions(self, obs):
@@ -142,21 +153,7 @@ class VDNLearner():
                 self.optimizers[agent_type].zero_grad()
                 loss.backward()
                 self.optimizers[agent_type].step()
-    def _update_q_networks(self):
-        for agent_type, agents in self.agent_types.items():
-            obs_batch_list, act_batch_list, rew_batch_list, next_obs_batch_list, done_batch_list = self._get_batch_data(agents)
-
-            if obs_batch_list:
-                joint_q_values, joint_target_q_values = self._calculate_joint_q_values(agents, agent_type, obs_batch_list, act_batch_list, next_obs_batch_list)
-
-                target_joint_q_values = self._calculate_target_joint_q_values(rew_batch_list, act_batch_list, done_batch_list, joint_q_values, joint_target_q_values)
-
-                loss = self.criterion(joint_q_values, target_joint_q_values.detach())
-
-                self.optimizers[agent_type].zero_grad()
-                loss.backward()
-                self.optimizers[agent_type].step()
-
+    
 
     def _get_batch_data(self, agents):
         obs_batch_list, act_batch_list, rew_batch_list, next_obs_batch_list, done_batch_list = [], [], [], [], []
