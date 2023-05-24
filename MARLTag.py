@@ -1,4 +1,4 @@
-from pettingzoo.mpe import simple_spread_v3
+from pettingzoo.mpe import simple_tag_v3
 from pettingzoo.utils import average_total_reward
 import numpy as np
 import gym
@@ -34,7 +34,7 @@ class TagLearner():
         self.criterion = nn.MSELoss()
         self.episodes = episodes
         self.batchsize = batchsize
-        self.env = simple_spread_v3.env(render_mode='human')
+        self.env = simple_tag_v3.env(render_mode='human', num_obstacles=0)
         self.env.reset()
         self.buffer = {key: [] for key in self.env.agents}
         for agent in self.env.agents:
@@ -108,12 +108,8 @@ class TagLearner():
         return average_total_reward(self.env, max_episodes=self.episodes, max_steps=self.episodes*25)
 
 if __name__ == '__main__':
-    num_episodes = 1000
-    tag = TagLearner(episodes = num_episodes)
+    tag = TagLearner()
     rewards = tag.train()
-    out_reward = 0
-    for key in rewards.keys(): 
-        out_reward += np.sum(rewards[key]) 
-    print(out_reward/num_episodes)
+    print(rewards)
     random_policy = tag.atr()
 

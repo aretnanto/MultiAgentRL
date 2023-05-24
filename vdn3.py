@@ -5,7 +5,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 from tqdm import tqdm
 import random
-from pettingzoo.mpe import simple_tag_v3
+from pettingzoo.mpe import  simple_spread_v3
 from pettingzoo.utils import average_total_reward
 
 class AgentQNetwork(nn.Module):
@@ -39,14 +39,14 @@ class VDNLearner():
         self.episodes = episodes
         self.batchsize = batchsize
         self.update_target_freq = update_target_freq
-        self.env = simple_tag_v3.parallel_env()
+        self.env = simple_spread_v3.parallel_env(render_mode = 'human')
         self.env.reset()
 
-        self.adversaries = ['adversary_0', 'adversary_1', 'adversary_2']
-        self.non_adversaries = ['agent_0']
+        #self.adversaries = ['adversary_0', 'adversary_1', 'adversary_2']
+        self.non_adversaries = ['agent_0', 'agent_1', 'agent_2']
 
-        self.agent_types = {'adversary': self.adversaries, 'non_adversary': self.non_adversaries}
-
+        #self.agent_types = {'adversary': self.adversaries, 'non_adversary': self.non_adversaries}
+        self.agent_types = {'non_adversary': self.non_adversaries}
         self.q_networks = {}
         self.target_q_networks = {}
         self.optimizers = {}
