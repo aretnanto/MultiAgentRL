@@ -23,28 +23,17 @@ class AgentQNetwork(nn.Module):
         return x
 
 class MixingNetwork(nn.Module):
-    def __init__(self, state_dim, num_agents, hidden_size=18):
+    def __init__(self, state_dim, hidden_size=32):
         super(MixingNetwork, self).__init__()
-        self.hyper_w1 = nn.Linear(state_dim, num_agents * hidden_size)
-        self.hyper_w2 = nn.Linear(state_dim, hidden_size * hidden_size)
-        self.hyper_b1 = nn.Linear(state_dim, hidden_size)
-        self.hyper_b2 = nn.Linear(state_dim, hidden_size)
-        self.hyper_b3 = nn.Linear(state_dim, 1)
+        self.fc1 = nn.Linear(state_dim, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.fc3 = nn.Linear(hidden_size, 1)
 
-    def forward(self, x, state):
-        w1 = F.relu(self.hyper_w1(state)).view(-1, x.size(1), x.size(1))
-        b1 = F.relu(self.hyper_b1(state)).view(-1, 1, x.size(1))
-        hidden = F.relu(torch.bmm(x, w1) + b1)
-
-        w2 = F.relu(self.hyper_w2(state)).view(-1, x.size(1), x.size(1))
-        b2 = F.relu(self.hyper_b2(state)).view(-1, 1, x.size(1))
-        out = torch.bmm(hidden, w2) + b2
-
-        b3 = self.hyper_b3(state).view(-1, 1, 1)
-        out = out.sum(dim=1).unsqueeze(1) + b3
-
-        return out
-
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
 
 class QMIXLearner():
     def __init__(
@@ -85,8 +74,8 @@ class QMIXLearner():
             self.target_q_networks[agent_id] = target_q_network
             self.optimizers[agent_id] = optim.Adam(q_network.parameters(), lr=learning_rate)
 
-        self.mixing_network = MixingNetwork(3, num_agents = self.num_agents)
-        self.target_mixing_network = MixingNetwork(3, num_agents = self.num_agents)
+        self.mixing_network = MixingNetwork(3)
+        self.target_mixing_network = MixingNetwork(3)
         self.target_mixing_network.load_state_dict(self.mixing_network.state_dict())
         self.mixer_optimizer = optim.Adam(self.mixing_network.parameters(), lr=learning_rate)
 
@@ -197,13 +186,29 @@ class QMIXLearner():
                 total_rewards[agent_id].append(reward)
 
         # Calculate and print average total rewards for adversaries and non-adversaries
-        avg_rewards= []
+        # Calculate and print average total rewards for all agents
+        avg_rewards = []
 
         for agent_id, rewards in total_rewards.items():
             avg_reward = sum(rewards) / len(rewards)
             avg_rewards.append(avg_reward)
-
         
+        print("Average total reward for all agents:", sum(avg_rewards) / len(avg_rewards))
+
+
+        import matplotlib.pyplot as plt
+        for agent in total_rewards.keys():
+            arr = np.array(total_rewards[agent])
+            window_size = 200
+            moving_avg = np.convolve(arr, np.ones(window_size)/window_size, mode='valid')
+            # Plot original MSE values
+            plt.plot(np.arange(window_size-1, len(arr)), moving_avg, label = agent)
+
+        #plt.plot(arr)
+        plt.xlabel('Episode')
+        plt.ylabel('Reward') 
+        plt.title('Agent Reward over Time - Good Learn') 
+        plt.legend()
 if __name__ == "__main__":
     learner = QMIXLearner()
     learner.train()
