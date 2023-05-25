@@ -23,9 +23,9 @@ class AgentQNetwork(nn.Module):
         return x
 
 class MixingNetwork(nn.Module):
-    def __init__(self, num_agents, state_dim, hidden_size=24):
+    def __init__(self, state_dim, hidden_size=32):
         super(MixingNetwork, self).__init__()
-        self.fc1 = nn.Linear(num_agents * state_dim, hidden_size)
+        self.fc1 = nn.Linear(state_dim, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc3 = nn.Linear(hidden_size, 1)
 
@@ -43,8 +43,8 @@ class QMIXLearner():
         gamma=0.99,
         episodes=10000,
         batchsize=64,
-        update_target_freq=248,
-        buffer_size=500
+        update_target_freq=128,
+        buffer_size=512
         
     ):
         self.epsilon = epsilon
@@ -74,8 +74,8 @@ class QMIXLearner():
             self.target_q_networks[agent_id] = target_q_network
             self.optimizers[agent_id] = optim.Adam(q_network.parameters(), lr=learning_rate)
 
-        self.mixing_network = MixingNetwork(self.num_agents, self.env.observation_space(agent_id).shape[0])
-        self.target_mixing_network = MixingNetwork(self.num_agents, self.env.observation_space(agent_id).shape[0])
+        self.mixing_network = MixingNetwork(3)
+        self.target_mixing_network = MixingNetwork(3)
         self.target_mixing_network.load_state_dict(self.mixing_network.state_dict())
         self.mixer_optimizer = optim.Adam(self.mixing_network.parameters(), lr=learning_rate)
 
@@ -99,50 +99,58 @@ class QMIXLearner():
             if len(self.buffer[agent_id]) >= self.buffer_size:
                 self.buffer[agent_id].pop(0)
             self.buffer[agent_id].append((obs[agent_id], actions[agent_id], rewards[agent_id], next_obs[agent_id], done[agent_id]))
+
+
     def _update_q_networks(self):
-        joint_obs = []
-        joint_actions = []
-        joint_next_obs = []
-        for agent_id in self.agents:
-            obs_batch, act_batch, rew_batch, next_obs_batch, done_batch = self._get_batch_data(agent_id)
-            if obs_batch is not None:
-                joint_obs.append(obs_batch)
-                joint_actions.append(joint_actions)
-                joint_next_obs.append(joint_next_obs)
-                q_values = self.q_networks[agent_id](obs_batch)
-                q_values = torch.gather(q_values, 1, act_batch.unsqueeze(1))
-                next_q_values = self.target_q_networks[agent_id](next_obs_batch)
-                next_q_values = torch.max(next_q_values, dim=1, keepdim=True)[0]
+      joint_q_val = []
+      joint_target_q = []
 
-                target_q_values = rew_batch + self.gamma * next_q_values * (1 - done_batch)
-                loss = self.criterion(q_values, target_q_values.detach())
+      for agent_id in self.agents:
+          obs_batch, act_batch, rew_batch, next_obs_batch, done_batch = self._get_batch_data(agent_id)
 
-                self.optimizers[agent_id].zero_grad()
-                loss.backward()
-                self.optimizers[agent_id].step()
+          if obs_batch is not None:
+              q_values = self.q_networks[agent_id](obs_batch)
+              chosen_q_values = q_values.gather(1, act_batch.unsqueeze(1))
 
-        # Update mixing network
-        joint_obs = torch.stack(joint_obs, self.num_agents)
-        joint_actions = torch.stack(joint_actions, self.num_agents)
-        joint_next_obs = torch.stack(joint_next_obs, self.num_agents)
-        q_tot = self.mixing_network(joint_obs)
-        target_q_tot = self.target_mixing_network(joint_next_obs)
-        mixer_loss = self.criterion(q_tot, target_q_tot.detach())
-        self.mixer_optimizer.zero_grad()
-        mixer_loss.backward()
-        self.mixer_optimizer.step()
+              next_q_values = self.target_q_networks[agent_id](next_obs_batch)
+              max_next_q_values, _ = next_q_values.max(dim=1, keepdim=True)
+              target_q_values = rew_batch + self.gamma * max_next_q_values * (1 - done_batch)
+
+              joint_q_val.append(chosen_q_values)
+              joint_target_q.append(target_q_values)
+
+      if joint_q_val:
+          joint_q_values = torch.cat(joint_q_val, dim=1)
+          joint_target_q_values = torch.cat(joint_target_q, dim=1)
+
+          q_tot = self.mixing_network(joint_q_values)
+          target_q_tot = self.target_mixing_network(joint_target_q_values)
+
+          mixer_loss = self.criterion(q_tot, target_q_tot.detach())
+          self.mixer_optimizer.zero_grad()
+          mixer_loss.backward()
+          self.mixer_optimizer.step()
+
 
 
 
     def _get_batch_data(self, agent_id):
+        if len(self.buffer[agent_id]) < self.batchsize:
+            return None, None, None, None, None
+
         indices = np.random.choice(len(self.buffer[agent_id]), self.batchsize)
         batch = [self.buffer[agent_id][i] for i in indices]
+
         obs_batch, act_batch, rew_batch, next_obs_batch, done_batch = zip(*batch)
+
         obs_batch = torch.tensor(obs_batch, dtype=torch.float)
         act_batch = torch.tensor(act_batch, dtype=torch.long)
         rew_batch = torch.tensor(rew_batch, dtype=torch.float).unsqueeze(1)
         next_obs_batch = torch.tensor(next_obs_batch, dtype=torch.float)
         done_batch = torch.tensor(done_batch, dtype=torch.float).unsqueeze(1)
+
+
+
         return obs_batch, act_batch, rew_batch, next_obs_batch, done_batch
     
     def train(self):
@@ -157,12 +165,15 @@ class QMIXLearner():
             while not all(done.values()):
                 actions = self._get_actions(obs)
                 next_obs, rewards, done, _, _ = self.env.step(actions)
-
+                if done == {}:
+                    break
+                if next_obs == {}:
+                    break
                 self._store_transition(obs, actions, rewards, next_obs, done)
 
                 for agent_id, reward in rewards.items():
                     episode_rewards[agent_id] += reward
-
+                
                 if step_count % self.update_target_freq == 0:
                     self._update_target_networks()
 
@@ -191,4 +202,3 @@ class QMIXLearner():
 if __name__ == "__main__":
     learner = QMIXLearner()
     learner.train()
-
