@@ -30,8 +30,8 @@ class MixingNetwork(nn.Module):
         self.fc3 = nn.Linear(hidden_size, 1)
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+        x = F.softplus(self.fc1(x))  # Apply softplus activation
+        x = F.softplus(self.fc2(x))  # Apply softplus activation
         x = self.fc3(x)
         return x
 
