@@ -8,6 +8,3 @@ On Spread:
 - ActorCritic.py has the code for our actor-critic implementation
 - simple.py has the code for the VDN (on spread)
 - QMIX_FINAL has the code for the QMIX implementation
-
-On tag:
-- vdn3.py has the code for the VDN on tag
