@@ -25,7 +25,7 @@ class QNetwork(nn.Module):
         return x
 
 class TagLearner(): 
-    def __init__(self, learning_rate = 1e-3, epsilon = 0.1, gamma = 0.99, episodes = 1000, batchsize = 64): 
+    def __init__(self, learning_rate = 1e-3, epsilon = 0.1, gamma = 0.99, episodes = 50, batchsize = 64): 
         self.models = {}
         self.optimizers = {}
         self.buffer = {}
@@ -36,6 +36,11 @@ class TagLearner():
         self.batchsize = batchsize
         self.env = simple_tag_v3.env(render_mode='rgb_array')
         self.env.reset()
+        self.adversaries = ['adversary_0', 'adversary_1', 'adversary_2']
+        self.non_adversaries = ['agent_0']
+
+        self.agent_types = {'adversary': self.adversaries, 'non_adversary': self.non_adversaries}
+
         self.buffer = {key: [] for key in self.env.agents}
         for agent in self.env.agents:
             output_actions = self.env.action_space(agent).n
@@ -102,6 +107,19 @@ class TagLearner():
                     self.buffer[agent].append((observation, action, reward, termination, truncation))
             for agent in rewards_array.keys():
                 rewards_array[agent].append(rewards[agent])
+        avg_adversary_rewards = []
+        avg_non_adversary_rewards = []
+
+        for agent_id, rewards in rewards_array.items():
+            avg_reward = sum(rewards) / len(rewards)
+            if agent_id in self.agent_types['adversary']:
+                avg_adversary_rewards.append(avg_reward)
+            else:
+                avg_non_adversary_rewards.append(avg_reward)
+
+        print("Average total reward for adversaries:", sum(avg_adversary_rewards) / len(avg_adversary_rewards))
+        print("Average total reward for non-adversaries:", sum(avg_non_adversary_rewards) / len(avg_non_adversary_rewards))
+
         return rewards_array
 
     def atr(self): 

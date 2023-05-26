@@ -29,7 +29,7 @@ class VDNLearner():
         learning_rate=1e-3,
         epsilon=0.1,
         gamma=0.99,
-        episodes=1000,
+        episodes=10000,
         batchsize=64,
         update_target_freq=100
     ):
@@ -111,6 +111,19 @@ class VDNLearner():
         print("Average total reward for adversaries:", sum(avg_adversary_rewards) / len(avg_adversary_rewards))
         print("Average total reward for non-adversaries:", sum(avg_non_adversary_rewards) / len(avg_non_adversary_rewards))
 
+        import matplotlib.pyplot as plt
+        for agent in total_rewards.keys():
+            arr = np.array(avg_adversary_rewards[agent])
+            window_size = 200
+            moving_avg = np.convolve(arr, np.ones(window_size)/window_size, mode='valid')
+            # Plot original MSE values
+            plt.plot(np.arange(window_size-1, len(arr)), moving_avg, label = agent)
+
+        #plt.plot(arr)
+        plt.xlabel('Episode')
+        plt.ylabel('Reward') 
+        plt.title('Agent Reward over Time - Good Learn') 
+        plt.legend()
 
     def _get_actions(self, obs):
         actions = {}

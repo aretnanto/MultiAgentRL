@@ -22,16 +22,24 @@ class AgentQNetwork(nn.Module):
         x = self.fc3(x)
         return x
 
+class MonotonicLinear(nn.Linear):
+    def __init__(self, *args, **kwargs):
+        super(MonotonicLinear, self).__init__(*args, **kwargs)
+
+    def forward(self, input):
+        # Apply ReLU activation to enforce monotonicity on the weights
+        self.weight.data = F.relu(self.weight.data)
+        return F.linear(input, self.weight, self.bias)
 class MixingNetwork(nn.Module):
     def __init__(self, state_dim, hidden_size=32):
         super(MixingNetwork, self).__init__()
-        self.fc1 = nn.Linear(state_dim, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, 1)
+        self.fc1 = MonotonicLinear(state_dim, hidden_size)
+        self.fc2 = MonotonicLinear(hidden_size, hidden_size)
+        self.fc3 = MonotonicLinear(hidden_size, 1)
 
     def forward(self, x):
-        x = F.softplus(self.fc1(x))  # Apply softplus activation
-        x = F.softplus(self.fc2(x))  # Apply softplus activation
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
 
